@@ -1,23 +1,14 @@
 package MooseX::Error::Trap;
+BEGIN {
+  $MooseX::Error::Trap::VERSION = '0.02';
+}
 use Moose;
 use Moose::Exporter;
 Moose::Exporter->setup_import_methods(
    with_caller => [qw{trap}],
 );
 
-
-
-=head1 NAME
-
-MooseX::Error::Trap - The great new MooseX::Error::Trap!
-
-=head1 VERSION
-
-Version 0.01
-
-=cut
-
-our $VERSION = '0.01';
+# ABSTRACT: Create error traps for methods.
 
 
 =head1 SYNOPSIS
@@ -38,43 +29,70 @@ Allows you to wrap any method in an eval and specify a dispatch method if the ev
       ...
    }
 
-=head1 Keywords
+=head1 Exported Keyword
 
 =head2 trap
 
-   trap 'run_method_name', 'error_handling_method_name';
+   trap 'wrapped_method', 'trap';
 
-Will wrap any calls to 'run_method_name' in an eval, currently you can only have one deligation method.
+Will wrap any calls to 'wrapped_method' in an eval, and if that eval fails then 'trap' 
+is run. 
+
+Currently 'trap' can be either a string or a CodeRef. The case for a code ref is simple
+if triped execute the code ref, passing $self and $@. When 'trap' is a string things are
+a bit more complicated. If 'trap' is the name of an attribute of $self we check to see 
+what the type constraint is on that attr, if it's 'CodeRef' then we grab the value and 
+proceede like a CodeRef. For any other type constraint we return the value of that attr.
+Lastly if 'trap' is the name of a method ($self->can($trap)) then we execute it passing 
+$@ as the only param. 
+
+In any other case we just die with $@ as though the eval was not there. 
 
 =cut
 
 sub trap {
-   my ($caller,$trap_method,$dispatch_method) = @_;
+   my $caller = shift;
+   my $wrap   = shift;
+   my $trap   = shift;
 
    #---------------------------------------------------------------------------
-   #  Make sure that were dealing with sane input
+   #  check input
    #---------------------------------------------------------------------------
-   confess sprintf(q{The specified dispatch method (%s) is not available via %s},
-                   $dispatch_method, 
-                   ref($caller) || $caller,
-                  ) if defined $dispatch_method && ! $caller->can($dispatch_method) ;
-   my $meta   = Class::MOP::Class->initialize($caller);
+   confess q{No method specified} unless defined $wrap;
+   confess q{No trap specified}   unless defined $trap;
+   if ( ref($trap) eq '' ) {
+      confess sprintf(q{%s can not %s}, $caller, $trap) unless $caller->can($trap);
+   }
 
-   
    #---------------------------------------------------------------------------
    #  build our trap
    #---------------------------------------------------------------------------
+   #my $meta = Class::MOP::Class->initialize($caller);
+   my $meta = Moose::Meta::Class->initialize($caller);
+   my $attr = $meta->get_attribute($trap);
+
    $meta->add_around_method_modifier(
-            $trap_method,
+            $wrap,
             sub{  my $next = shift;
                   my $self = shift;
 
-                  eval { $self->$next(@_) }
-                  or do{ #$self->trap_dispatch;
-                     return ( defined($dispatch_method) ) 
-                            ? $self->$dispatch_method($@) 
-                            : die $@ ;
+                  my $rv;
+                  eval { $rv = $self->$next(@_) }
+                  or do{ 
+                     # If $trap is the name of an attr, and that attr is a CodeRef, grab it
+                     if( my $attr = $meta->get_attribute($trap) ) {
+                        if ($attr->type_constraint->equals('CodeRef') ) {
+                           $trap = $self->$trap; # grab that code ref and store it to $trap
+                        }
+                        else {
+                           return $self->$trap; # non-code attr, just pull the value and use that
+                        }
+                     }
+                     $rv = ref($trap) eq ''     ? $self->$trap($@) 
+                         : ref($trap) eq 'CODE' ? $trap->($self,$@)
+                         : die $@ ; # sane fall back
                   };
+                  return $rv;
             },
    );
 }

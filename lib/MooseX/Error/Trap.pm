@@ -1,6 +1,6 @@
 package MooseX::Error::Trap;
 BEGIN {
-  $MooseX::Error::Trap::VERSION = '0.02';
+  $MooseX::Error::Trap::VERSION = '0.021';
 }
 use Moose;
 use Moose::Exporter;

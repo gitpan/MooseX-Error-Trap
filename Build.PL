@@ -18,7 +18,7 @@ my %module_build_args = (
     'NOTBENH <NOTBENH@cpan.org>'
   ],
   'dist_name' => 'MooseX-Error-Trap',
-  'dist_version' => '0.02',
+  'dist_version' => '0.021',
   'license' => 'perl',
   'module_name' => 'MooseX::Error::Trap',
   'recommends' => {},
